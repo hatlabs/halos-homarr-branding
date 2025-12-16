@@ -30,10 +30,10 @@ favicon_path = "/usr/share/halos-homarr-branding/favicon.ico"
 # Dark mode is preferred for marine/industrial environments
 default_color_scheme = "dark"
 
-# Primary color (Hat Labs navy)
+# Primary color
 primary_color = "#273f65"
 
-# Secondary color (Hat Labs burgundy)
+# Secondary color
 secondary_color = "#6d131e"
 
 # Item border radius: "xs", "sm", "md", "lg", "xl"
