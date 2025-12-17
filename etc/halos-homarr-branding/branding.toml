@@ -37,10 +37,38 @@ primary_color = "#273f65"
 secondary_color = "#6d131e"
 
 # Item border radius: "xs", "sm", "md", "lg", "xl"
-item_radius = "lg"
+item_radius = "md"
 
 # Background opacity (0-100)
-opacity = 100
+# Lower values make app tiles more transparent, revealing the background image
+opacity = 80
+
+# Background image URL (served via /branding/ URL prefix)
+# Image file: shipwreck long-exposure fine art photograph
+background_image_url = "/branding/background.jpg"
+
+# Custom CSS to inject into the dashboard
+# This CSS darkens the background image without affecting the content
+custom_css = """
+/* Overlay to darken background */
+.mantine-AppShell-root::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Ensure content appears above the overlay */
+.mantine-AppShell-main {
+  position: relative;
+  z-index: 2;
+}
+"""
 
 [credentials]
 # Default admin credentials for first-boot setup
