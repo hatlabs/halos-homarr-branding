@@ -1,3 +1,21 @@
+halos-homarr-branding (0.1.0-3) unstable; urgency=medium
+
+  * Use complete Homarr v1.x schema template instead of custom tables
+  * Include Drizzle migration records so Homarr skips migrations
+  * Replace halos-service user with admin user for API key ownership
+  * Set admin user provider='oidc' for OIDC account matching
+  * Add email 'admin@halos.local' for OIDC account linking
+  * Add admin user to admins group with admin permissions
+
+ -- Matti Airas <matti.airas@hatlabs.fi>  Sun, 22 Dec 2025 00:45:00 +0200
+
+halos-homarr-branding (0.1.0-2) unstable; urgency=medium
+
+  * Fix seed database schema to use snake_case column names
+  * Match Homarr v1.x Drizzle ORM schema: api_key, user_id, previous_step, etc.
+
+ -- Matti Airas <matti.airas@hatlabs.fi>  Sat, 21 Dec 2025 14:30:00 +0200
+
 halos-homarr-branding (0.1.0-1) unstable; urgency=medium
 
   * Initial release

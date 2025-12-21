@@ -3,13 +3,20 @@
 Generate Homarr seed database with bootstrap API key.
 
 This script creates a pre-configured SQLite database for Homarr with:
+- Complete Homarr v1.x schema (from homarr-schema-template.sql)
+- Drizzle migration records (so Homarr skips migrations)
 - Onboarding already complete
-- A service account user (for API key ownership)
+- An admin user with provider='oidc' (for API key ownership and OIDC login)
 - A bootstrap API key (to be rotated on first boot)
 - Default server settings
+- Default groups (everyone, admins) with admin user in admins group
 
 The bootstrap API key is a well-known value that the homarr-container-adapter
 uses on first boot to create a random permanent API key, then deletes.
+
+The admin user has email 'admin@halos.local' and provider='oidc'. When a user
+logs in via OIDC with the same email, Homarr's adapter matches by both email
+AND provider, so the existing user is found and the OIDC account is linked to it.
 """
 
 import argparse
@@ -30,81 +37,85 @@ except ImportError:
 # Note: bcrypt has a 72-byte limit, so we use a shorter token
 BOOTSTRAP_API_KEY_ID = "halos-bootstrap"
 BOOTSTRAP_API_KEY_TOKEN = "halos-bootstrap-rotate-me-on-first-boot-abc123"
-SERVICE_USER_ID = "halos-service"
+
+# Admin user - ID and email for OIDC account linking
+ADMIN_USER_ID = "admin"
+ADMIN_USER_EMAIL = "admin@halos.local"
+
+# Group IDs (must match template)
+ADMINS_GROUP_ID = "z4qbfvum6cs94sr6s5pslxq6"
 
 
-def create_tables(conn: sqlite3.Connection) -> None:
-    """Create the Homarr database tables."""
-    cursor = conn.cursor()
+def get_schema_template_path() -> Path:
+    """Get path to the SQL schema template."""
+    script_dir = Path(__file__).parent
+    return script_dir / "homarr-schema-template.sql"
 
-    # Onboarding table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS onboarding (
-            id TEXT PRIMARY KEY NOT NULL,
-            step TEXT NOT NULL,
-            previousStep TEXT
-        )
-    """)
 
-    # User table (simplified - only fields we need)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user (
-            id TEXT PRIMARY KEY NOT NULL,
-            name TEXT,
-            email TEXT,
-            emailVerified INTEGER,
-            image TEXT,
-            password TEXT,
-            salt TEXT,
-            provider TEXT DEFAULT 'credentials',
-            homeBoardId TEXT,
-            mobileHomeBoardId TEXT,
-            defaultSearchEngineId TEXT,
-            openSearchInNewTab INTEGER DEFAULT 1,
-            colorScheme TEXT DEFAULT 'dark',
-            firstDayOfWeek INTEGER DEFAULT 1,
-            pingIconsEnabled INTEGER DEFAULT 0
-        )
-    """)
+def create_database_from_template(conn: sqlite3.Connection) -> None:
+    """Create database by executing the SQL template.
 
-    # API key table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS apiKey (
-            id TEXT PRIMARY KEY NOT NULL,
-            apiKey TEXT NOT NULL,
-            salt TEXT NOT NULL,
-            userId TEXT REFERENCES user(id) ON DELETE CASCADE
-        )
-    """)
+    The template contains:
+    - All Homarr table definitions
+    - Drizzle migration records
+    - Default icon repositories
+    - Default groups (everyone, admins)
+    """
+    template_path = get_schema_template_path()
+    if not template_path.exists():
+        raise FileNotFoundError(f"Schema template not found: {template_path}")
 
-    # Server settings table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS serverSetting (
-            settingKey TEXT PRIMARY KEY NOT NULL UNIQUE,
-            value TEXT NOT NULL DEFAULT '{}'
-        )
-    """)
+    print(f"Loading schema from: {template_path}")
+    sql = template_path.read_text()
 
-    conn.commit()
+    # Remove the marker comments (they're just for documentation)
+    sql = sql.replace("-- {{ONBOARDING}}", "")
+    sql = sql.replace("-- {{USER}}", "")
+    sql = sql.replace("-- {{API_KEY}}", "")
+    sql = sql.replace("-- {{SERVER_SETTINGS}}", "")
+    sql = sql.replace("-- {{GROUP_MEMBERS}}", "")
+
+    # Execute the template SQL
+    conn.executescript(sql)
 
 
 def insert_onboarding_complete(conn: sqlite3.Connection) -> None:
     """Mark onboarding as complete."""
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO onboarding (id, step, previousStep)
+        INSERT INTO onboarding (id, step, previous_step)
         VALUES ('init', 'finish', 'settings')
     """)
     conn.commit()
 
 
-def insert_service_user(conn: sqlite3.Connection) -> None:
-    """Create the service account user."""
+def insert_admin_user(conn: sqlite3.Connection) -> None:
+    """Create the admin user as OIDC user for account matching.
+
+    Homarr's custom adapter filters getUserByEmail by BOTH email AND provider,
+    so when an OIDC user logs in, it only finds users with provider='oidc'.
+
+    We create the user with provider='oidc' so that when admin logs in via OIDC
+    with the same email (admin@halos.local), Homarr finds this existing user
+    and links the OIDC account to it instead of creating a new user.
+
+    Note: email_verified must be set to 1 (true) for account linking to work.
+    """
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO user (id, name, provider, colorScheme)
-        VALUES (?, 'HaLOS Service Account', 'credentials', 'dark')
-    """, (SERVICE_USER_ID,))
+        INSERT INTO user (id, name, email, email_verified, provider, color_scheme)
+        VALUES (?, 'Administrator', ?, 1, 'oidc', 'dark')
+    """, (ADMIN_USER_ID, ADMIN_USER_EMAIL))
+    conn.commit()
+
+
+def insert_admin_group_member(conn: sqlite3.Connection) -> None:
+    """Add admin user to the admins group."""
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO groupMember (group_id, user_id)
+        VALUES (?, ?)
+    """, (ADMINS_GROUP_ID, ADMIN_USER_ID))
     conn.commit()
 
 
@@ -116,13 +127,13 @@ def insert_bootstrap_api_key(conn: sqlite3.Connection) -> str:
 
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO apiKey (id, apiKey, salt, userId)
+        INSERT INTO apiKey (id, api_key, salt, user_id)
         VALUES (?, ?, ?, ?)
     """, (
         BOOTSTRAP_API_KEY_ID,
         hashed.decode('utf-8'),
         salt.decode('utf-8'),
-        SERVICE_USER_ID
+        ADMIN_USER_ID
     ))
     conn.commit()
 
@@ -155,11 +166,11 @@ def insert_server_settings(conn: sqlite3.Connection) -> None:
     }
 
     cursor.execute("""
-        INSERT INTO serverSetting (settingKey, value) VALUES (?, ?)
+        INSERT INTO serverSetting (setting_key, value) VALUES (?, ?)
     """, ('analytics', json.dumps(analytics)))
 
     cursor.execute("""
-        INSERT INTO serverSetting (settingKey, value) VALUES (?, ?)
+        INSERT INTO serverSetting (setting_key, value) VALUES (?, ?)
     """, ('crawlingAndIndexing', json.dumps(crawling)))
 
     conn.commit()
@@ -193,12 +204,13 @@ def main() -> int:
 
     print(f"Creating seed database: {args.output_db}")
 
-    # Create database and tables
+    # Create database from template and add seed data
     conn = sqlite3.connect(args.output_db)
     try:
-        create_tables(conn)
+        create_database_from_template(conn)
         insert_onboarding_complete(conn)
-        insert_service_user(conn)
+        insert_admin_user(conn)
+        insert_admin_group_member(conn)
         api_key = insert_bootstrap_api_key(conn)
         insert_server_settings(conn)
     finally:
