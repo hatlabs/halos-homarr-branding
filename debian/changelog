@@ -1,3 +1,12 @@
+halos-homarr-branding (0.1.0-4) unstable; urgency=medium
+
+  * Add halos-sync service user for API key ownership
+  * Move bootstrap API key from admin to halos-sync user
+  * Both halos-sync and admin users in admins group
+  * Separates programmatic API access from human OIDC login
+
+ -- Matti Airas <matti.airas@hatlabs.fi>  Sun, 22 Dec 2025 16:00:00 +0200
+
 halos-homarr-branding (0.1.0-3) unstable; urgency=medium
 
   * Use complete Homarr v1.x schema template instead of custom tables

@@ -6,17 +6,18 @@ This script creates a pre-configured SQLite database for Homarr with:
 - Complete Homarr v1.x schema (from homarr-schema-template.sql)
 - Drizzle migration records (so Homarr skips migrations)
 - Onboarding already complete
-- An admin user with provider='oidc' (for API key ownership and OIDC login)
-- A bootstrap API key (to be rotated on first boot)
+- Two users: halos-sync (service account) and admin (human admin)
+- A bootstrap API key owned by halos-sync (rotated on first boot)
 - Default server settings
-- Default groups (everyone, admins) with admin user in admins group
+- Default groups (everyone, admins) with both users in admins group
 
-The bootstrap API key is a well-known value that the homarr-container-adapter
-uses on first boot to create a random permanent API key, then deletes.
+Two users are created:
+1. halos-sync: Service account for API key ownership and programmatic access.
+   The homarr-container-adapter uses this user's API key for sync operations.
+2. admin: Human administrator for OIDC login. When a user logs in via OIDC
+   with email 'admin@halos.local', Homarr links the OIDC account to this user.
 
-The admin user has email 'admin@halos.local' and provider='oidc'. When a user
-logs in via OIDC with the same email, Homarr's adapter matches by both email
-AND provider, so the existing user is found and the OIDC account is linked to it.
+Both users have provider='oidc' to enable OIDC account linking.
 """
 
 import argparse
@@ -38,7 +39,11 @@ except ImportError:
 BOOTSTRAP_API_KEY_ID = "halos-bootstrap"
 BOOTSTRAP_API_KEY_TOKEN = "halos-bootstrap-rotate-me-on-first-boot-abc123"
 
-# Admin user - ID and email for OIDC account linking
+# Service account for API key ownership and programmatic access
+HALOS_SYNC_USER_ID = "halos-sync"
+HALOS_SYNC_USER_EMAIL = "halos-sync@halos.local"
+
+# Human admin user for OIDC login
 ADMIN_USER_ID = "admin"
 ADMIN_USER_EMAIL = "admin@halos.local"
 
@@ -89,8 +94,24 @@ def insert_onboarding_complete(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def insert_halos_sync_user(conn: sqlite3.Connection) -> None:
+    """Create the halos-sync service account for API key ownership.
+
+    This user owns the bootstrap API key (and the rotated permanent key).
+    The homarr-container-adapter uses this user's API key for all sync operations.
+
+    We use provider='oidc' for consistency, though this user won't log in via OIDC.
+    """
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO user (id, name, email, email_verified, provider, color_scheme)
+        VALUES (?, 'HaLOS Sync Service', ?, 1, 'oidc', 'dark')
+    """, (HALOS_SYNC_USER_ID, HALOS_SYNC_USER_EMAIL))
+    conn.commit()
+
+
 def insert_admin_user(conn: sqlite3.Connection) -> None:
-    """Create the admin user as OIDC user for account matching.
+    """Create the admin user for human OIDC login.
 
     Homarr's custom adapter filters getUserByEmail by BOTH email AND provider,
     so when an OIDC user logs in, it only finds users with provider='oidc'.
@@ -109,9 +130,13 @@ def insert_admin_user(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def insert_admin_group_member(conn: sqlite3.Connection) -> None:
-    """Add admin user to the admins group."""
+def insert_group_members(conn: sqlite3.Connection) -> None:
+    """Add both users to the admins group."""
     cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO groupMember (group_id, user_id)
+        VALUES (?, ?)
+    """, (ADMINS_GROUP_ID, HALOS_SYNC_USER_ID))
     cursor.execute("""
         INSERT INTO groupMember (group_id, user_id)
         VALUES (?, ?)
@@ -120,7 +145,11 @@ def insert_admin_group_member(conn: sqlite3.Connection) -> None:
 
 
 def insert_bootstrap_api_key(conn: sqlite3.Connection) -> str:
-    """Create the bootstrap API key and return the full key string."""
+    """Create the bootstrap API key owned by halos-sync user.
+
+    The API key is owned by halos-sync (not admin) to separate programmatic
+    API access from human OIDC login.
+    """
     # Generate bcrypt salt and hash
     salt = bcrypt.gensalt(rounds=10)
     hashed = bcrypt.hashpw(BOOTSTRAP_API_KEY_TOKEN.encode('utf-8'), salt)
@@ -133,7 +162,7 @@ def insert_bootstrap_api_key(conn: sqlite3.Connection) -> str:
         BOOTSTRAP_API_KEY_ID,
         hashed.decode('utf-8'),
         salt.decode('utf-8'),
-        ADMIN_USER_ID
+        HALOS_SYNC_USER_ID
     ))
     conn.commit()
 
@@ -209,8 +238,9 @@ def main() -> int:
     try:
         create_database_from_template(conn)
         insert_onboarding_complete(conn)
+        insert_halos_sync_user(conn)
         insert_admin_user(conn)
-        insert_admin_group_member(conn)
+        insert_group_members(conn)
         api_key = insert_bootstrap_api_key(conn)
         insert_server_settings(conn)
     finally:
