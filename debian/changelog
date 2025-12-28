@@ -5,7 +5,7 @@ halos-homarr-branding (0.1.0-4) unstable; urgency=medium
   * Both halos-sync and admin users in admins group
   * Separates programmatic API access from human OIDC login
 
- -- Matti Airas <matti.airas@hatlabs.fi>  Sun, 22 Dec 2025 16:00:00 +0200
+ -- Matti Airas <matti.airas@hatlabs.fi>  Mon, 22 Dec 2025 16:00:00 +0200
 
 halos-homarr-branding (0.1.0-3) unstable; urgency=medium
 
@@ -16,7 +16,7 @@ halos-homarr-branding (0.1.0-3) unstable; urgency=medium
   * Add email 'admin@halos.local' for OIDC account linking
   * Add admin user to admins group with admin permissions
 
- -- Matti Airas <matti.airas@hatlabs.fi>  Sun, 22 Dec 2025 00:45:00 +0200
+ -- Matti Airas <matti.airas@hatlabs.fi>  Sun, 21 Dec 2025 00:45:00 +0200
 
 halos-homarr-branding (0.1.0-2) unstable; urgency=medium
 
